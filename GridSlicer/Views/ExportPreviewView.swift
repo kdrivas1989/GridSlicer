@@ -158,37 +158,30 @@ struct ExportPreviewView: View {
     }
 
     private func applyBaseFilename() {
-        // Parse the base filename to find what comes after the last separator
         let trimmed = baseFilename.trimmingCharacters(in: .whitespaces)
 
-        // Find the last separator (- or _ or space)
-        if let separatorRange = trimmed.range(of: "[-_ ]", options: [.regularExpression, .backwards]) {
-            let prefix = String(trimmed[..<separatorRange.upperBound])
-            let suffix = String(trimmed[separatorRange.upperBound...])
+        // Check if the string ends with a single letter (with optional spaces before it)
+        // e.g., "3 Way - A" or "3 Way -A" or "Test_B"
+        if let lastChar = trimmed.last, lastChar.isLetter {
+            // Check if it's a single letter at the end (preceded by non-letter)
+            let withoutLast = trimmed.dropLast()
+            let trimmedWithoutLast = withoutLast.trimmingCharacters(in: .whitespaces)
 
-            // Check if suffix is a number
-            if let startNumber = Int(suffix) {
+            if let charBefore = trimmedWithoutLast.last, !charBefore.isLetter {
+                // Found pattern like "prefix- A" or "prefix-A"
+                let prefix = String(withoutLast) // Keep original spacing
                 for (index, item) in exportItems.enumerated() {
-                    item.filename = "\(prefix)\(startNumber + index)"
-                }
-                return
-            }
-
-            // Check if suffix is a single letter
-            if suffix.count == 1, let char = suffix.first, char.isLetter {
-                for (index, item) in exportItems.enumerated() {
-                    if let nextChar = incrementLetter(char, by: index) {
+                    if let nextChar = incrementLetter(lastChar, by: index) {
                         item.filename = "\(prefix)\(nextChar)"
                     } else {
-                        // Exceeded Z, continue with AA, AB, etc or just use numbers
-                        item.filename = "\(prefix)\(char)\(index + 1)"
+                        item.filename = "\(prefix)\(lastChar)\(index + 1)"
                     }
                 }
                 return
             }
         }
 
-        // Check if entire string ends with a number (no separator)
+        // Check if string ends with a number
         var digits = ""
         for char in trimmed.reversed() {
             if char.isNumber {

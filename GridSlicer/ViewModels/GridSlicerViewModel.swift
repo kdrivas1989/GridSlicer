@@ -324,41 +324,83 @@ class GridSlicerViewModel: ObservableObject {
         }
     }
 
-    /// Add a vertical divider
+    /// Add a vertical divider - tries to detect a border in the image
     func addVerticalDivider() {
-        // Find a good position for the new divider
-        let existingPositions = [0.0] + gridState.verticalDividers.sorted() + [1.0]
-        var maxGap: CGFloat = 0
-        var bestPosition: CGFloat = 0.5
+        guard let image = image else {
+            gridState.addVerticalDivider(at: 0.5)
+            updateStatus()
+            return
+        }
 
-        for i in 0..<(existingPositions.count - 1) {
-            let gap = existingPositions[i + 1] - existingPositions[i]
-            if gap > maxGap {
-                maxGap = gap
-                bestPosition = (existingPositions[i] + existingPositions[i + 1]) / 2
+        // Detect potential vertical lines in the image
+        let (detectedVertical, _) = BorderDetector.detectBorders(in: image, maxLines: 20, minSpacing: 0.05)
+
+        // Find a detected line that's not already used
+        let tolerance: CGFloat = 0.03
+        let unusedLines = detectedVertical.filter { detected in
+            !gridState.verticalDividers.contains { existing in
+                abs(existing - detected) < tolerance
             }
         }
 
-        gridState.addVerticalDivider(at: bestPosition)
+        if let bestLine = unusedLines.first {
+            // Use the first unused detected line
+            gridState.addVerticalDivider(at: bestLine)
+        } else {
+            // Fallback: find largest gap and center there
+            let existingPositions = [0.0] + gridState.verticalDividers.sorted() + [1.0]
+            var maxGap: CGFloat = 0
+            var bestPosition: CGFloat = 0.5
+
+            for i in 0..<(existingPositions.count - 1) {
+                let gap = existingPositions[i + 1] - existingPositions[i]
+                if gap > maxGap {
+                    maxGap = gap
+                    bestPosition = (existingPositions[i] + existingPositions[i + 1]) / 2
+                }
+            }
+            gridState.addVerticalDivider(at: bestPosition)
+        }
         updateStatus()
     }
 
-    /// Add a horizontal divider
+    /// Add a horizontal divider - tries to detect a border in the image
     func addHorizontalDivider() {
-        // Find a good position for the new divider
-        let existingPositions = [0.0] + gridState.horizontalDividers.sorted() + [1.0]
-        var maxGap: CGFloat = 0
-        var bestPosition: CGFloat = 0.5
+        guard let image = image else {
+            gridState.addHorizontalDivider(at: 0.5)
+            updateStatus()
+            return
+        }
 
-        for i in 0..<(existingPositions.count - 1) {
-            let gap = existingPositions[i + 1] - existingPositions[i]
-            if gap > maxGap {
-                maxGap = gap
-                bestPosition = (existingPositions[i] + existingPositions[i + 1]) / 2
+        // Detect potential horizontal lines in the image
+        let (_, detectedHorizontal) = BorderDetector.detectBorders(in: image, maxLines: 20, minSpacing: 0.05)
+
+        // Find a detected line that's not already used
+        let tolerance: CGFloat = 0.03
+        let unusedLines = detectedHorizontal.filter { detected in
+            !gridState.horizontalDividers.contains { existing in
+                abs(existing - detected) < tolerance
             }
         }
 
-        gridState.addHorizontalDivider(at: bestPosition)
+        if let bestLine = unusedLines.first {
+            // Use the first unused detected line
+            gridState.addHorizontalDivider(at: bestLine)
+        } else {
+            // Fallback: find largest gap and center there
+            let existingPositions = [0.0] + gridState.horizontalDividers.sorted() + [1.0]
+            var maxGap: CGFloat = 0
+            var bestPosition: CGFloat = 0.5
+
+            for i in 0..<(existingPositions.count - 1) {
+                let gap = existingPositions[i + 1] - existingPositions[i]
+                if gap > maxGap {
+                    maxGap = gap
+                    bestPosition = (existingPositions[i] + existingPositions[i + 1]) / 2
+                }
+            }
+            gridState.addHorizontalDivider(at: bestPosition)
+        }
         updateStatus()
     }
 
