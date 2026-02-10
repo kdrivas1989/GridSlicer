@@ -6,21 +6,27 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Toolbar
+            #if os(macOS)
+            // Toolbar (macOS)
             ToolbarView(viewModel: viewModel)
 
             Divider()
+            #endif
 
             // Main canvas
             ImageCanvasView(viewModel: viewModel)
                 .frame(minWidth: 600, minHeight: 400)
 
+            #if os(macOS)
             Divider()
 
             // Status bar
             StatusBarView(viewModel: viewModel)
+            #endif
         }
+        #if os(macOS)
         .frame(minWidth: 700, minHeight: 500)
+        #endif
         .alert("Error", isPresented: $viewModel.showError) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -37,12 +43,15 @@ struct ContentView: View {
                 )
             }
         }
+        #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             // Cleanup if needed
         }
+        #endif
     }
 }
 
+#if os(macOS)
 /// Status bar showing current state
 struct StatusBarView: View {
     @ObservedObject var viewModel: GridSlicerViewModel
@@ -79,6 +88,7 @@ struct StatusBarView: View {
         .background(Color(nsColor: .controlBackgroundColor))
     }
 }
+#endif
 
 #Preview {
     ContentView()

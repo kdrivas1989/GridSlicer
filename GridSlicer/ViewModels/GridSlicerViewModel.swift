@@ -1,11 +1,15 @@
 import SwiftUI
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import PDFKit
 import UniformTypeIdentifiers
 
 /// Main view model for the GridSlicer app
 class GridSlicerViewModel: ObservableObject {
-    @Published var image: NSImage?
+    @Published var image: PlatformImage?
     @Published var imageName: String = ""
     @Published var gridState = GridState()
     @Published var outputFolderURL: URL?
@@ -64,10 +68,18 @@ class GridSlicerViewModel: ObservableObject {
             return
         }
 
+        #if os(macOS)
         guard let loadedImage = NSImage(contentsOf: url) else {
             showError(message: "Failed to load image from: \(url.lastPathComponent)")
             return
         }
+        #else
+        guard let data = try? Data(contentsOf: url),
+              let loadedImage = UIImage(data: data) else {
+            showError(message: "Failed to load image from: \(url.lastPathComponent)")
+            return
+        }
+        #endif
 
         currentPDFDocument = nil
         totalPages = 0
@@ -156,7 +168,7 @@ class GridSlicerViewModel: ObservableObject {
         return count
     }
 
-    /// Render the current PDF page to an NSImage
+    /// Render the current PDF page to an image
     func renderCurrentPDFPage() {
         guard let pdfDocument = currentPDFDocument,
               let page = pdfDocument.page(at: currentPageIndex) else {
@@ -167,6 +179,7 @@ class GridSlicerViewModel: ObservableObject {
         let scale: CGFloat = 2.0 // Render at 2x for better quality
         let scaledSize = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
 
+        #if os(macOS)
         let image = NSImage(size: scaledSize)
         image.lockFocus()
 
@@ -182,6 +195,17 @@ class GridSlicerViewModel: ObservableObject {
 
         image.unlockFocus()
         self.image = image
+        #else
+        // iOS: Use UIGraphicsImageRenderer
+        let renderer = UIGraphicsImageRenderer(size: scaledSize)
+        let image = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: scaledSize))
+            context.cgContext.scaleBy(x: scale, y: scale)
+            page.draw(with: .mediaBox, to: context.cgContext)
+        }
+        self.image = image
+        #endif
     }
 
     /// Go to next PDF page
@@ -219,18 +243,18 @@ class GridSlicerViewModel: ObservableObject {
         currentPDFDocument != nil && currentPageIndex > 0
     }
 
-    /// Load an image from NSImage (for drag and drop)
-    func loadImage(_ nsImage: NSImage, name: String) {
-        image = nsImage
+    /// Load an image from PlatformImage (for drag and drop)
+    func loadImage(_ platformImage: PlatformImage, name: String) {
+        image = platformImage
         imageName = name
         gridState.reset()
         updateStatus()
     }
 
-    /// Open file picker to load an image or PDF
+    #if os(macOS)
+    /// Open file picker to load an image or PDF (macOS)
     func openImagePicker() {
         let panel = NSOpenPanel()
-        // Allow all files - we'll check the type when loading
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -250,7 +274,7 @@ class GridSlicerViewModel: ObservableObject {
         }
     }
 
-    /// Select output folder for export
+    /// Select output folder for export (macOS)
     func selectOutputFolder() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
@@ -264,6 +288,22 @@ class GridSlicerViewModel: ObservableObject {
             updateStatus()
         }
     }
+    #else
+    // iOS: These will be handled by SwiftUI sheets/pickers
+    @Published var showImagePicker = false
+    @Published var showFolderPicker = false
+
+    func openImagePicker() {
+        showImagePicker = true
+    }
+
+    func selectOutputFolder() {
+        // On iOS, we'll save to the app's documents directory by default
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        outputFolderURL = documentsPath
+        updateStatus()
+    }
+    #endif
 
     /// Export all regions - shows preview dialog for renaming
     func exportRegions() {
@@ -497,6 +537,7 @@ class GridSlicerViewModel: ObservableObject {
                 let scale: CGFloat = 2.0
                 let scaledSize = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
 
+                #if os(macOS)
                 let pageImage = NSImage(size: scaledSize)
                 pageImage.lockFocus()
 
@@ -508,6 +549,15 @@ class GridSlicerViewModel: ObservableObject {
                 }
 
                 pageImage.unlockFocus()
+                #else
+                let renderer = UIGraphicsImageRenderer(size: scaledSize)
+                let pageImage = renderer.image { context in
+                    UIColor.white.setFill()
+                    context.fill(CGRect(origin: .zero, size: scaledSize))
+                    context.cgContext.scaleBy(x: scale, y: scale)
+                    page.draw(with: .mediaBox, to: context.cgContext)
+                }
+                #endif
 
                 // Export regions for this page
                 let pageBaseName = "\(baseName)_page\(pageIndex + 1)"

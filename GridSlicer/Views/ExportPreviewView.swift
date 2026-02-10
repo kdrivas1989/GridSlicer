@@ -4,11 +4,11 @@ import SwiftUI
 class ExportItem: Identifiable, ObservableObject {
     let id = UUID()
     let region: CropRegion
-    let previewImage: NSImage?
+    let previewImage: PlatformImage?
     @Published var filename: String
     @Published var isSelected: Bool = true
 
-    init(region: CropRegion, previewImage: NSImage?, defaultFilename: String) {
+    init(region: CropRegion, previewImage: PlatformImage?, defaultFilename: String) {
         self.region = region
         self.previewImage = previewImage
         self.filename = defaultFilename
@@ -24,7 +24,7 @@ struct ExportPreviewView: View {
     @State private var exportProgress: Double = 0
     @State private var baseFilename: String = ""
 
-    let sourceImage: NSImage
+    let sourceImage: PlatformImage
     let regions: [CropRegion]
     let outputFolder: URL
 
@@ -40,7 +40,7 @@ struct ExportPreviewView: View {
                     .foregroundColor(.secondary)
             }
             .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(Color(PlatformColor.systemGray6))
 
             Divider()
 
@@ -107,7 +107,7 @@ struct ExportPreviewView: View {
                 }
             }
             .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(Color(PlatformColor.systemGray6))
         }
         .frame(width: 600, height: 500)
         .onAppear {
@@ -131,16 +131,17 @@ struct ExportPreviewView: View {
         }
     }
 
-    private func createPreviewImage(for region: CropRegion) -> NSImage? {
+    private func createPreviewImage(for region: CropRegion) -> PlatformImage? {
         let sourceSize = sourceImage.size
         let cropRect = region.pixelRect(for: sourceSize)
 
         // Create a small thumbnail
         let maxSize: CGFloat = 60
         let scale = min(maxSize / cropRect.width, maxSize / cropRect.height, 1.0)
-        let thumbSize = NSSize(width: cropRect.width * scale, height: cropRect.height * scale)
+        let thumbSize = CGSize(width: cropRect.width * scale, height: cropRect.height * scale)
 
-        let thumbnail = NSImage(size: thumbSize)
+        #if os(macOS)
+        let thumbnail = PlatformImage(size: thumbSize)
         thumbnail.lockFocus()
 
         let sourceRect = NSRect(
@@ -155,6 +156,22 @@ struct ExportPreviewView: View {
 
         thumbnail.unlockFocus()
         return thumbnail
+        #else
+        guard let cgImage = sourceImage.cgImage else { return nil }
+        let cropCGRect = CGRect(
+            x: cropRect.origin.x,
+            y: cropRect.origin.y,
+            width: cropRect.width,
+            height: cropRect.height
+        )
+        guard let croppedCG = cgImage.cropping(to: cropCGRect) else { return nil }
+        let croppedImage = UIImage(cgImage: croppedCG)
+
+        let renderer = UIGraphicsImageRenderer(size: thumbSize)
+        return renderer.image { _ in
+            croppedImage.draw(in: CGRect(origin: .zero, size: thumbSize))
+        }
+        #endif
     }
 
     private func applyBaseFilename() {
@@ -234,20 +251,27 @@ struct ExportPreviewView: View {
 
             for item in selectedItems {
                 // Create the cropped image
-                if let croppedImage = cropImage(sourceImage, to: item.region) {
+                if let croppedImage = self.cropImage(self.sourceImage, to: item.region) {
                     let filename = item.filename.hasSuffix(".png") ? item.filename : "\(item.filename).png"
-                    let fileURL = outputFolder.appendingPathComponent(filename)
+                    let fileURL = self.outputFolder.appendingPathComponent(filename)
 
+                    #if os(macOS)
                     if let tiffData = croppedImage.tiffRepresentation,
                        let bitmapRep = NSBitmapImageRep(data: tiffData),
                        let pngData = bitmapRep.representation(using: .png, properties: [:]) {
                         try? pngData.write(to: fileURL)
                         exported += 1
                     }
+                    #else
+                    if let pngData = croppedImage.pngData() {
+                        try? pngData.write(to: fileURL)
+                        exported += 1
+                    }
+                    #endif
                 }
 
                 DispatchQueue.main.async {
-                    exportProgress = Double(exported) / Double(total)
+                    self.exportProgress = Double(exported) / Double(total)
                 }
             }
 
@@ -259,13 +283,14 @@ struct ExportPreviewView: View {
         }
     }
 
-    private func cropImage(_ image: NSImage, to region: CropRegion) -> NSImage? {
+    private func cropImage(_ image: PlatformImage, to region: CropRegion) -> PlatformImage? {
         let sourceSize = image.size
         let cropRect = region.pixelRect(for: sourceSize)
 
         guard cropRect.width > 0 && cropRect.height > 0 else { return nil }
 
-        let croppedImage = NSImage(size: NSSize(width: cropRect.width, height: cropRect.height))
+        #if os(macOS)
+        let croppedImage = PlatformImage(size: NSSize(width: cropRect.width, height: cropRect.height))
         croppedImage.lockFocus()
 
         let sourceRect = NSRect(
@@ -280,6 +305,11 @@ struct ExportPreviewView: View {
 
         croppedImage.unlockFocus()
         return croppedImage
+        #else
+        guard let cgImage = image.cgImage,
+              let croppedCG = cgImage.cropping(to: cropRect) else { return nil }
+        return UIImage(cgImage: croppedCG)
+        #endif
     }
 }
 
@@ -291,12 +321,14 @@ struct ExportItemRow: View {
         HStack(spacing: 12) {
             // Checkbox
             Toggle("", isOn: $item.isSelected)
+                #if os(macOS)
                 .toggleStyle(.checkbox)
+                #endif
                 .labelsHidden()
 
             // Preview thumbnail
             if let preview = item.previewImage {
-                Image(nsImage: preview)
+                Image(platformImage: preview)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 50, height: 50)
@@ -343,7 +375,7 @@ struct ExportItemRow: View {
     ExportPreviewView(
         viewModel: GridSlicerViewModel(),
         isPresented: .constant(true),
-        sourceImage: NSImage(),
+        sourceImage: PlatformImage(),
         regions: [],
         outputFolder: URL(fileURLWithPath: "/tmp")
     )

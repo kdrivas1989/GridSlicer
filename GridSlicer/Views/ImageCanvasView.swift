@@ -14,7 +14,7 @@ struct ImageCanvasView: View {
         GeometryReader { geometry in
             ZStack {
                 // Background
-                Color(nsColor: .windowBackgroundColor)
+                Color.gray.opacity(0.2)
 
                 if let image = viewModel.image {
                     // Centered zoomable image with grid overlay
@@ -111,13 +111,13 @@ struct ImageCanvasView: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.9))
+                .fill(Color(PlatformColor.systemGray6).opacity(0.9))
                 .shadow(radius: 4)
         )
     }
 
     @ViewBuilder
-    private func imageWithGrid(image: NSImage, containerSize: CGSize) -> some View {
+    private func imageWithGrid(image: PlatformImage, containerSize: CGSize) -> some View {
         let imageSize = image.size
         let scaledSize = calculateFitSize(imageSize: imageSize, containerSize: containerSize)
 
@@ -128,7 +128,7 @@ struct ImageCanvasView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
             // The image
-            Image(nsImage: image)
+            Image(platformImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: scaledSize.width, height: scaledSize.height)
@@ -220,15 +220,25 @@ struct ImageCanvasView: View {
             provider.loadItem(forTypeIdentifier: UTType.image.identifier, options: nil) { item, error in
                 guard error == nil else { return }
 
-                var image: NSImage?
+                var image: PlatformImage?
                 var name = "Dropped Image"
 
-                if let nsImage = item as? NSImage {
-                    image = nsImage
+                if let platformImage = item as? PlatformImage {
+                    image = platformImage
                 } else if let data = item as? Data {
-                    image = NSImage(data: data)
+                    #if os(macOS)
+                    image = PlatformImage(data: data)
+                    #else
+                    image = UIImage(data: data)
+                    #endif
                 } else if let url = item as? URL {
-                    image = NSImage(contentsOf: url)
+                    #if os(macOS)
+                    image = PlatformImage(contentsOf: url)
+                    #else
+                    if let data = try? Data(contentsOf: url) {
+                        image = UIImage(data: data)
+                    }
+                    #endif
                     name = url.deletingPathExtension().lastPathComponent
                 }
 
@@ -245,10 +255,12 @@ struct ImageCanvasView: View {
     }
 
     private func setupKeyMonitor() {
+        #if os(macOS)
         NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
             optionKeyPressed = event.modifierFlags.contains(.option)
             return event
         }
+        #endif
     }
 }
 

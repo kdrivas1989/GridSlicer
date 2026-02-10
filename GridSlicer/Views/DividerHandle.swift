@@ -103,12 +103,18 @@ struct DividerLine: View {
                     isHovered = hovering
                     if hovering {
                         if isVertical {
-                            NSCursor.resizeLeftRight.push()
+                            #if os(macOS)
+                        NSCursor.resizeLeftRight.push()
+                        #endif
                         } else {
-                            NSCursor.resizeUpDown.push()
+                            #if os(macOS)
+                        NSCursor.resizeUpDown.push()
+                        #endif
                         }
                     } else if !isDragging {
+                        #if os(macOS)
                         NSCursor.pop()
+                        #endif
                     }
                 }
                 .gesture(
@@ -125,7 +131,9 @@ struct DividerLine: View {
                         }
                         .onEnded { _ in
                             isDragging = false
-                            NSCursor.pop()
+                            #if os(macOS)
+                        NSCursor.pop()
+                        #endif
                             onDragEnd()
                         }
                 )
@@ -186,9 +194,13 @@ struct ExclusionBorder: View {
                 .onHover { hovering in
                     isHovered = hovering
                     if hovering {
+                        #if os(macOS)
                         NSCursor.resizeUpDown.push()
+                        #endif
                     } else if !isDragging {
+                        #if os(macOS)
                         NSCursor.pop()
+                        #endif
                     }
                 }
                 .gesture(
@@ -213,7 +225,9 @@ struct ExclusionBorder: View {
                         }
                         .onEnded { _ in
                             isDragging = false
-                            NSCursor.pop()
+                            #if os(macOS)
+                        NSCursor.pop()
+                        #endif
                         }
                 )
         }

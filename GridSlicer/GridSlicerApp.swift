@@ -6,9 +6,11 @@ struct GridSlicerApp: App {
         WindowGroup {
             ContentView()
         }
+        #if os(macOS)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) { }
         }
+        #endif
     }
 }

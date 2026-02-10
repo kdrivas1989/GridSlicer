@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import CoreImage
 import Accelerate
 
@@ -7,11 +11,8 @@ class BorderDetector {
 
     /// Detect horizontal and vertical divider positions in an image
     /// Returns normalized positions (0-1) for vertical and horizontal lines
-    /// - Parameters:
-    ///   - image: The image to analyze
-    ///   - maxLines: Maximum number of lines to detect in each direction (default 8)
-    ///   - minSpacing: Minimum spacing between lines as fraction of image size (default 0.08 = 8%)
-    static func detectBorders(in image: NSImage, maxLines: Int = 8, minSpacing: CGFloat = 0.08) -> (vertical: [CGFloat], horizontal: [CGFloat]) {
+    static func detectBorders(in image: PlatformImage, maxLines: Int = 8, minSpacing: CGFloat = 0.08) -> (vertical: [CGFloat], horizontal: [CGFloat]) {
+        #if os(macOS)
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             // Try alternative method to get CGImage
             guard let tiffData = image.tiffRepresentation,
@@ -22,6 +23,12 @@ class BorderDetector {
             return detectBordersInCGImage(cg, maxLines: maxLines, minSpacing: minSpacing)
         }
         return detectBordersInCGImage(cgImage, maxLines: maxLines, minSpacing: minSpacing)
+        #else
+        guard let cgImage = image.cgImage else {
+            return ([], [])
+        }
+        return detectBordersInCGImage(cgImage, maxLines: maxLines, minSpacing: minSpacing)
+        #endif
     }
 
     private static func detectBordersInCGImage(_ cgImage: CGImage, maxLines: Int, minSpacing: CGFloat) -> (vertical: [CGFloat], horizontal: [CGFloat]) {
@@ -176,7 +183,7 @@ class BorderDetector {
     ///   - image: The image to analyze
     ///   - columns: Expected number of columns (vertical lines = columns - 1)
     ///   - rows: Expected number of rows (horizontal lines = rows - 1)
-    static func detectGridBorders(in image: NSImage, columns: Int = 5, rows: Int = 5) -> (vertical: [CGFloat], horizontal: [CGFloat]) {
+    static func detectGridBorders(in image: PlatformImage, columns: Int = 5, rows: Int = 5) -> (vertical: [CGFloat], horizontal: [CGFloat]) {
         // Calculate minimum spacing based on expected grid size
         let minSpacing: CGFloat = 1.0 / CGFloat(max(columns, rows) + 1) * 0.8
         return detectBorders(in: image, maxLines: max(columns, rows) - 1, minSpacing: minSpacing)

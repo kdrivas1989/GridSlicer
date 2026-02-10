@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import CoreGraphics
 
 /// Handles cropping and exporting image regions
@@ -25,14 +29,8 @@ class ImageExporter {
     }
 
     /// Export all crop regions to the specified folder
-    /// - Parameters:
-    ///   - image: The source image
-    ///   - regions: The crop regions to export
-    ///   - folderURL: The destination folder
-    ///   - baseName: The base name for exported files
-    /// - Returns: The number of successfully exported files
     static func exportRegions(
-        from image: NSImage,
+        from image: PlatformImage,
         regions: [CropRegion],
         to folderURL: URL,
         baseName: String
@@ -41,7 +39,20 @@ class ImageExporter {
             throw ExportError.noRegions
         }
 
-        // Get bitmap representation from NSImage (works for PDF-rendered images too)
+        #if os(macOS)
+        return try exportRegionsMacOS(from: image, regions: regions, to: folderURL, baseName: baseName)
+        #else
+        return try exportRegionsiOS(from: image, regions: regions, to: folderURL, baseName: baseName)
+        #endif
+    }
+
+    #if os(macOS)
+    private static func exportRegionsMacOS(
+        from image: NSImage,
+        regions: [CropRegion],
+        to folderURL: URL,
+        baseName: String
+    ) throws -> Int {
         guard let bitmapRep = getBitmapRepresentation(from: image) else {
             throw ExportError.invalidImage
         }
@@ -52,7 +63,6 @@ class ImageExporter {
         for region in regions {
             let pixelRect = region.pixelRect(for: imageSize)
 
-            // Ensure the rect is within bounds and has integer values
             let clampedRect = CGRect(
                 x: max(0, floor(pixelRect.origin.x)),
                 y: max(0, floor(pixelRect.origin.y)),
@@ -60,11 +70,8 @@ class ImageExporter {
                 height: min(ceil(pixelRect.height), imageSize.height - floor(pixelRect.origin.y))
             )
 
-            guard clampedRect.width > 0 && clampedRect.height > 0 else {
-                continue
-            }
+            guard clampedRect.width > 0 && clampedRect.height > 0 else { continue }
 
-            // Crop the bitmap
             guard let croppedImage = cropBitmap(bitmapRep, to: clampedRect) else {
                 throw ExportError.cropFailed(region: region)
             }
@@ -83,20 +90,16 @@ class ImageExporter {
         return exportedCount
     }
 
-    /// Get a bitmap representation from an NSImage
     private static func getBitmapRepresentation(from image: NSImage) -> NSBitmapImageRep? {
-        // Try to get existing bitmap rep first
         for rep in image.representations {
             if let bitmapRep = rep as? NSBitmapImageRep {
                 return bitmapRep
             }
         }
 
-        // Create a new bitmap by drawing the image
         let size = image.size
         guard size.width > 0 && size.height > 0 else { return nil }
 
-        // Use pixel dimensions if available, otherwise use point dimensions
         let pixelWidth = Int(size.width)
         let pixelHeight = Int(size.height)
 
@@ -128,7 +131,6 @@ class ImageExporter {
         return bitmapRep
     }
 
-    /// Crop a bitmap representation to the specified rect
     private static func cropBitmap(_ bitmapRep: NSBitmapImageRep, to rect: CGRect) -> NSImage? {
         let width = Int(rect.width)
         let height = Int(rect.height)
@@ -153,7 +155,6 @@ class ImageExporter {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: croppedRep)
 
-        // Draw the portion of the original bitmap
         let sourceRect = NSRect(x: rect.origin.x, y: CGFloat(bitmapRep.pixelsHigh) - rect.origin.y - rect.height,
                                 width: rect.width, height: rect.height)
         let destRect = NSRect(x: 0, y: 0, width: width, height: height)
@@ -171,7 +172,6 @@ class ImageExporter {
         return resultImage
     }
 
-    /// Save an NSImage as PNG to the specified URL
     private static func savePNG(image: NSImage, to url: URL) throws {
         guard let tiffData = image.tiffRepresentation,
               let bitmapRep = NSBitmapImageRep(data: tiffData),
@@ -181,4 +181,51 @@ class ImageExporter {
 
         try pngData.write(to: url)
     }
+    #else
+    // iOS implementation
+    private static func exportRegionsiOS(
+        from image: UIImage,
+        regions: [CropRegion],
+        to folderURL: URL,
+        baseName: String
+    ) throws -> Int {
+        let imageSize = image.size
+        var exportedCount = 0
+
+        for region in regions {
+            let pixelRect = region.pixelRect(for: imageSize)
+
+            let clampedRect = CGRect(
+                x: max(0, floor(pixelRect.origin.x)),
+                y: max(0, floor(pixelRect.origin.y)),
+                width: min(ceil(pixelRect.width), imageSize.width - floor(pixelRect.origin.x)),
+                height: min(ceil(pixelRect.height), imageSize.height - floor(pixelRect.origin.y))
+            )
+
+            guard clampedRect.width > 0 && clampedRect.height > 0 else { continue }
+
+            guard let cgImage = image.cgImage,
+                  let croppedCGImage = cgImage.cropping(to: clampedRect) else {
+                throw ExportError.cropFailed(region: region)
+            }
+
+            let croppedImage = UIImage(cgImage: croppedCGImage)
+
+            let filename = region.filename(baseName: baseName)
+            let fileURL = folderURL.appendingPathComponent(filename)
+
+            do {
+                guard let pngData = croppedImage.pngData() else {
+                    throw NSError(domain: "ImageExporter", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create PNG data"])
+                }
+                try pngData.write(to: fileURL)
+                exportedCount += 1
+            } catch {
+                throw ExportError.saveFailed(filename: filename, reason: error.localizedDescription)
+            }
+        }
+
+        return exportedCount
+    }
+    #endif
 }
