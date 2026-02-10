@@ -158,46 +158,39 @@ struct ExportPreviewView: View {
     }
 
     private func applyBaseFilename() {
-        // Parse the base filename to extract prefix and starting value (letter or number)
-        let parsed = parseFilename(baseFilename)
+        // Parse the base filename to find what comes after the last separator
+        let trimmed = baseFilename.trimmingCharacters(in: .whitespaces)
 
-        for (index, item) in exportItems.enumerated() {
-            switch parsed {
-            case .number(let prefix, let start):
-                // Increment numbers: 1, 2, 3...
-                item.filename = "\(prefix)\(start + index)"
-            case .letter(let prefix, let startChar):
-                // Increment letters: A, B, C...
-                if let nextChar = incrementLetter(startChar, by: index) {
-                    item.filename = "\(prefix)\(nextChar)"
-                } else {
-                    // Fallback if we exceed Z
-                    item.filename = "\(prefix)\(startChar)\(index + 1)"
+        // Find the last separator (- or _ or space)
+        if let separatorRange = trimmed.range(of: "[-_ ]", options: [.regularExpression, .backwards]) {
+            let prefix = String(trimmed[..<separatorRange.upperBound])
+            let suffix = String(trimmed[separatorRange.upperBound...])
+
+            // Check if suffix is a number
+            if let startNumber = Int(suffix) {
+                for (index, item) in exportItems.enumerated() {
+                    item.filename = "\(prefix)\(startNumber + index)"
                 }
-            case .plain(let prefix):
-                // No number or letter found, append sequential number
-                item.filename = "\(prefix)-\(index + 1)"
+                return
+            }
+
+            // Check if suffix is a single letter
+            if suffix.count == 1, let char = suffix.first, char.isLetter {
+                for (index, item) in exportItems.enumerated() {
+                    if let nextChar = incrementLetter(char, by: index) {
+                        item.filename = "\(prefix)\(nextChar)"
+                    } else {
+                        // Exceeded Z, continue with AA, AB, etc or just use numbers
+                        item.filename = "\(prefix)\(char)\(index + 1)"
+                    }
+                }
+                return
             }
         }
-    }
 
-    /// Result of parsing a filename
-    private enum FilenamePattern {
-        case number(prefix: String, start: Int)
-        case letter(prefix: String, start: Character)
-        case plain(prefix: String)
-    }
-
-    /// Parse filename to extract prefix and trailing number or letter
-    /// e.g., "FS-21" returns .number("FS-", 21)
-    /// e.g., "FS-A" returns .letter("FS-", "A")
-    /// e.g., "image" returns .plain("image")
-    private func parseFilename(_ filename: String) -> FilenamePattern {
-        guard !filename.isEmpty else { return .plain(prefix: filename) }
-
-        // Check for trailing digits first
+        // Check if entire string ends with a number (no separator)
         var digits = ""
-        for char in filename.reversed() {
+        for char in trimmed.reversed() {
             if char.isNumber {
                 digits = String(char) + digits
             } else {
@@ -205,39 +198,34 @@ struct ExportPreviewView: View {
             }
         }
 
-        if !digits.isEmpty, let number = Int(digits) {
-            let prefix = String(filename.dropLast(digits.count))
-            return .number(prefix: prefix, start: number)
-        }
-
-        // Check for trailing letter (A-Z or a-z)
-        if let lastChar = filename.last, lastChar.isLetter {
-            // Make sure it's a single letter at the end (after a separator like - or _)
-            let prefix = String(filename.dropLast(1))
-            if prefix.isEmpty || !prefix.last!.isLetter {
-                return .letter(prefix: prefix, start: lastChar)
+        if !digits.isEmpty, let startNumber = Int(digits) {
+            let prefix = String(trimmed.dropLast(digits.count))
+            for (index, item) in exportItems.enumerated() {
+                item.filename = "\(prefix)\(startNumber + index)"
             }
+            return
         }
 
-        return .plain(prefix: filename)
+        // Default: just append -1, -2, -3
+        for (index, item) in exportItems.enumerated() {
+            item.filename = "\(trimmed)-\(index + 1)"
+        }
     }
 
     /// Increment a letter by a given amount (A + 1 = B, A + 2 = C, etc.)
     private func incrementLetter(_ char: Character, by amount: Int) -> Character? {
         let isUppercase = char.isUppercase
-        let base: Character = isUppercase ? "A" : "a"
+        let baseScalar: UInt8 = isUppercase ? 65 : 97  // 'A' or 'a'
 
-        guard let baseValue = base.asciiValue,
-              let charValue = char.asciiValue else { return nil }
+        guard let charValue = char.asciiValue else { return nil }
 
-        let offset = Int(charValue - baseValue)
+        let offset = Int(charValue) - Int(baseScalar)
         let newOffset = offset + amount
 
         // Check if we exceed Z/z (26 letters)
-        guard newOffset < 26 else { return nil }
+        guard newOffset >= 0 && newOffset < 26 else { return nil }
 
-        let newValue = baseValue + UInt8(newOffset)
-        return Character(UnicodeScalar(newValue))
+        return Character(UnicodeScalar(baseScalar + UInt8(newOffset)))
     }
 
     private func performExport() {
